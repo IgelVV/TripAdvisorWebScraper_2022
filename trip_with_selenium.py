@@ -1,3 +1,4 @@
+import csv
 import json
 import re
 import time
@@ -8,6 +9,7 @@ from selenium.common.exceptions import NoSuchElementException, StaleElementRefer
 from selenium.webdriver.common.action_chains import ActionChains
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
+from collections.abc import Iterable
 
 URL = 'https://www.tripadvisor.com/Tourism-g186591-Ireland-Vacations.html'
 
@@ -32,7 +34,7 @@ class TripAdvisorParser:
             self.categories[category] = None
 
         self.get_links_to_site_categories()
-        self.parse_all_hotels()
+        self.write_to_csv('hotels.csv', self.parse_all_hotels(2))
         self.parse_all_restaurants()
         # etc
 
@@ -47,9 +49,36 @@ class TripAdvisorParser:
                     break
         print(self.categories, '\n')
 
-    def parse_all_hotels(self, filename='hotels.csv') -> None:
+    @staticmethod
+    def write_to_csv(file_name, info: Iterable):
+        with open(file_name, 'a', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            for row in info:
+                writer.writerow(row)
+
+    def parse_all_hotels(self, sleep) -> tuple:
         all_hotel_links = self.get_all_hotels_links()
+        missing_hotels = []
+
         for hotel_link in all_hotel_links:
+            try:
+                hotel_info = self.parse_hotel_page(hotel_link)
+                time.sleep(sleep)
+                print(
+                    hotel_info.name + "\n",
+                    hotel_info.address + "\n",
+                    hotel_info.home_page + "\n",
+                    hotel_info.email + "\n",
+                    hotel_info.main_image_link + "\n",
+                    '______________________________________'
+                )
+                yield hotel_info.row()
+            except StaleElementReferenceException as ex:
+                missing_hotels.append(hotel_link)
+                print(ex)
+                raise ex
+
+        for hotel_link in missing_hotels:
             hotel_info = self.parse_hotel_page(hotel_link)
             print(
                 hotel_info.name + "\n",
@@ -59,8 +88,8 @@ class TripAdvisorParser:
                 hotel_info.main_image_link + "\n",
                 '______________________________________'
             )
-            # self.write_to_csv(hotel_info)
-            time.sleep(2)
+            time.sleep(sleep)
+            yield hotel_info.row()
 
     def get_all_hotels_links(self) -> list:
         all_hotel_links = []
@@ -171,8 +200,16 @@ class Hotel:
         self.email = email
         self.main_image_link = main_image_link
 
-    def to_csv(self):
-        ...
+    def row(self) -> tuple:
+        row = (
+            self.name,
+            self.address,
+            self.home_page,
+            self.email,
+            self.main_image_link,
+            self.category
+        )
+        return row
 
 
 def main():
